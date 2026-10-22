@@ -229,11 +229,23 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
                       menu.nama,
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    subtitle: Text(
-                      '${menu.kategori} • ${menu.deskripsi}\n'
-                      'Dibuat: ${formatTanggal(menu.dibuatPada)}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${menu.kategori} • ${menu.deskripsi}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Dibuat: ${formatTanggal(menu.dibuatPada)}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ],
                     ),
                     isThreeLine: true,
                     trailing: Text(
