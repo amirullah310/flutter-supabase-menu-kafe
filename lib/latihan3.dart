@@ -211,7 +211,7 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Menu Kafe (CRUD)'),
+        title: const Text('Menu Kafe (Supabase)'),
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
         actions: [
