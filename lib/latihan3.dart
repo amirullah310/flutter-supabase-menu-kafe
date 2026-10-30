@@ -14,14 +14,22 @@
 //   geser → confirmDismiss (dialog) → onDismissed → _hapusLaluMuatUlang()
 //   → DELETE ... WHERE id = ? → SELECT ulang → FutureBuilder.
 
+// Paket bawaan Flutter: widget Material (Scaffold, Dismissible, AlertDialog, dll).
 import 'package:flutter/material.dart';
+// Paket Supabase: Supabase.initialize(), klien database, dan PostgrestException.
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+// Berisi supabaseUrl dan supabaseKey (publishable key); tidak di-commit ke GitHub.
 import 'config.dart';
 
+// =====================================================================
+// TITIK MASUK APLIKASI (sama seperti Latihan 1 dan 2)
+// =====================================================================
+// main() menunggu Supabase siap terlebih dahulu, baru menjalankan tampilan.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized(); // wajib: ada await sebelum runApp
 
+  // Menyambungkan aplikasi ke project Supabase dengan URL dan publishable key.
   await Supabase.initialize(
     url: supabaseUrl,
     publishableKey: supabaseKey,
@@ -33,7 +41,11 @@ Future<void> main() async {
 /// Klien Supabase — dipakai di seluruh aplikasi.
 final supabase = Supabase.instance.client;
 
-// ---------------- MODEL ----------------
+// =====================================================================
+// MODEL
+// =====================================================================
+// MenuItem mewakili SATU baris tabel `menu`. Dibanding Latihan 2,
+// ada field baru `stok` (Tugas 5).
 class MenuItem {
   final int id;
   final String nama;
@@ -41,11 +53,13 @@ class MenuItem {
   final int harga;
   final String deskripsi;
   final bool tersedia;
+  // Kolom dibuat_pada (timestamptz) → DateTime, nullable agar aman.
   final DateTime? dibuatPada;
 
   /// Tugas 5: kolom baru `stok integer not null default 0`.
   final int stok;
 
+  // Konstruktor: semua field wajib diisi.
   const MenuItem({
     required this.id,
     required this.nama,
@@ -57,6 +71,8 @@ class MenuItem {
     required this.stok,
   });
 
+  // Mengubah satu baris dari database (Map) menjadi objek MenuItem.
+  // Pola `as Tipe? ?? nilaiDefault` mencegah error bila kolom bernilai null.
   factory MenuItem.fromJson(Map<String, dynamic> json) {
     return MenuItem(
       // bigint dari Postgres tiba sebagai angka, jadi dikonversi dengan aman.
@@ -68,11 +84,16 @@ class MenuItem {
       tersedia: json['tersedia'] as bool? ?? true,
       dibuatPada:
           DateTime.tryParse(json['dibuat_pada'] as String? ?? '')?.toLocal(),
+      // Tugas 5: bila kolom stok belum ada / null, dianggap 0.
       stok: (json['stok'] as num?)?.toInt() ?? 0,
     );
   }
 }
 
+// =====================================================================
+// FUNGSI PEMBANTU (FORMAT TAMPILAN)
+// =====================================================================
+// Mengubah angka menjadi format rupiah: 25000 → "Rp 25.000".
 String formatRupiah(int nilai) {
   final pola = RegExp(r'\B(?=(\d{3})+(?!\d))');
   final hasil = nilai.toString().replaceAllMapped(pola, (match) => '.');
@@ -82,12 +103,17 @@ String formatRupiah(int nilai) {
 /// Format sederhana dd/MM/yyyy HH:mm tanpa package tambahan.
 String formatTanggal(DateTime? waktu) {
   if (waktu == null) return '-';
+  // dua(5) → "05": menambahkan nol di depan agar selalu 2 digit.
   String dua(int n) => n.toString().padLeft(2, '0');
   return '${dua(waktu.day)}/${dua(waktu.month)}/${waktu.year} '
       '${dua(waktu.hour)}:${dua(waktu.minute)}';
 }
 
-// ---------------- AKSES DATABASE ----------------
+// =====================================================================
+// AKSES DATABASE (CRUD lengkap: read, create, update, delete)
+// =====================================================================
+// READ — mengambil seluruh isi tabel `menu`, diurutkan berdasarkan nama.
+// Setara SQL: SELECT * FROM menu ORDER BY nama ASC;
 Future<List<MenuItem>> ambilDaftarMenu() async {
   final data = await supabase
       .from('menu')
@@ -97,6 +123,8 @@ Future<List<MenuItem>> ambilDaftarMenu() async {
   return data.map((baris) => MenuItem.fromJson(baris)).toList();
 }
 
+// CREATE — menambah satu baris (sama seperti Latihan 2, ditambah kolom stok).
+// Setara SQL: INSERT INTO menu (nama, kategori, harga, deskripsi, stok) VALUES (...);
 Future<void> tambahMenu({
   required String nama,
   required String kategori,
@@ -115,6 +143,9 @@ Future<void> tambahMenu({
   });
 }
 
+// UPDATE — BARU di Latihan 3: mengubah semua kolom satu menu.
+// Setara SQL: UPDATE menu SET nama = ?, ... WHERE id = ?;
+// Dipanggil dari formulir mode edit.
 Future<void> ubahMenu({
   required int id,
   required String nama,
@@ -134,29 +165,40 @@ Future<void> ubahMenu({
   }).eq('id', id); // TANPA .eq() → SELURUH tabel akan terubah!
 }
 
+// UPDATE sebagian — BARU: hanya mengubah kolom `tersedia`.
+// Setara SQL: UPDATE menu SET tersedia = ? WHERE id = ?;
+// Dipanggil saat kartu ditekan lama.
 Future<void> ubahKetersediaan({required int id, required bool tersedia}) async {
   await supabase.from('menu').update({'tersedia': tersedia}).eq('id', id);
 }
 
+// DELETE — BARU: menghapus satu menu berdasarkan id.
+// Setara SQL: DELETE FROM menu WHERE id = ?;
 Future<void> hapusMenu(int id) async {
   // Tugas 4 (percobaan berbahaya): bila .eq('id', id) dihapus, SELURUH baris
   // tabel ikut terhapus. Sudah dikembalikan seperti semula.
   await supabase.from('menu').delete().eq('id', id);
 }
 
-// ---------------- TAMPILAN ----------------
+// =====================================================================
+// TAMPILAN: HALAMAN DAFTAR MENU
+// =====================================================================
+// Widget paling luar aplikasi: MaterialApp dengan HalamanKatalog sebagai halaman pertama.
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return const MaterialApp(
+      // Menyembunyikan pita "DEBUG".
       debugShowCheckedModeBanner: false,
       home: HalamanKatalog(),
     );
   }
 }
 
+// Halaman daftar menu. StatefulWidget karena isinya dimuat ulang setelah
+// menambah, mengubah, atau menghapus menu.
 class HalamanKatalog extends StatefulWidget {
   const HalamanKatalog({super.key});
 
@@ -165,14 +207,19 @@ class HalamanKatalog extends StatefulWidget {
 }
 
 class _HalamanKatalogState extends State<HalamanKatalog> {
+  // Future berisi daftar menu dari server; diisi pertama kali di initState().
   late Future<List<MenuItem>> futureMenu;
 
+  // Dipanggil SEKALI saat halaman dibuat. Future tidak dibuat di build()
+  // karena build() bisa dipanggil berkali-kali.
   @override
   void initState() {
     super.initState();
     futureMenu = ambilDaftarMenu();
   }
 
+  // Mengambil ulang data: dipanggil oleh tombol refresh, tarik-ke-bawah,
+  // dan setelah data berhasil ditambah atau diubah.
   void muatUlang() {
     setState(() {
       futureMenu = ambilDaftarMenu();
@@ -181,6 +228,7 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
 
   /// Hapus di database DULU, baru ambil ulang daftar (lihat tugas 6).
   Future<List<MenuItem>> _hapusLaluMuatUlang(int id) async {
+    // 1) hapus di database, 2) baru ambil daftar terbaru tanpa baris tersebut.
     await hapusMenu(id);
     return ambilDaftarMenu();
   }
@@ -188,8 +236,10 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
   /// Tekan lama pada kartu: membalik status tersedia tanpa membuka formulir.
   Future<void> _balikKetersediaan(MenuItem menu) async {
     try {
+      // !menu.tersedia = kebalikan status sekarang (tersedia ↔ tidak tersedia).
       await ubahKetersediaan(id: menu.id, tersedia: !menu.tersedia);
       if (!mounted) return;
+      // Ambil ulang daftar agar tampilan kartu ikut berubah.
       muatUlang();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -199,6 +249,7 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
           ),
         ),
       );
+    // Mis. internet putus: tampilkan pesan, aplikasi tidak berhenti.
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -210,6 +261,7 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // ---------- Bilah atas (judul + tombol refresh) ----------
       appBar: AppBar(
         title: const Text('Menu Kafe (Supabase)'),
         backgroundColor: Colors.teal,
@@ -222,6 +274,8 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
           ),
         ],
       ),
+      // ---------- Tombol "Tambah Menu" ----------
+      // Membuka FormMenu dalam mode TAMBAH (tanpa data menu).
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
           // Menunggu hasil dari halaman formulir: true = data berhasil disimpan.
@@ -241,17 +295,22 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
         icon: const Icon(Icons.add),
         label: const Text('Tambah Menu'),
       ),
+      // ---------- Isi halaman ----------
+      // FutureBuilder menangani keadaan menunggu, gagal, kosong, dan berhasil.
       body: FutureBuilder<List<MenuItem>>(
         future: futureMenu,
         builder: (context, snapshot) {
+          // Keadaan 1 — MENUNGGU: permintaan ke server belum selesai.
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
+          // Keadaan 2 — GAGAL: pesan error + tombol "Coba Lagi".
           if (snapshot.hasError) {
             return _tampilanError('${snapshot.error}', muatUlang);
           }
 
+          // Keadaan 3 — BERHASIL tetapi tabel kosong.
           final daftar = snapshot.data ?? [];
           if (daftar.isEmpty) {
             return const Center(
@@ -259,6 +318,7 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
             );
           }
 
+          // Keadaan 4 — BERHASIL dan ada data: daftar kartu (tarik ke bawah = refresh).
           return RefreshIndicator(
             onRefresh: () async => muatUlang(),
             child: ListView.builder(
@@ -266,11 +326,15 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
               itemCount: daftar.length,
               itemBuilder: (context, index) {
+                // Satu baris menu yang sedang dibangun kartunya.
                 final menu = daftar[index];
 
+                // Dismissible (BARU) membuat kartu bisa digeser untuk dihapus.
                 return Dismissible(
                   key: ValueKey(menu.id), // wajib unik untuk setiap baris
+                  // Hanya bisa digeser dari kanan ke kiri.
                   direction: DismissDirection.endToStart,
+                  // Latar merah dengan ikon tempat sampah yang terlihat saat kartu digeser.
                   background: Container(
                     alignment: Alignment.centerRight,
                     padding: const EdgeInsets.only(right: 24),
@@ -281,6 +345,9 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
                     ),
                     child: const Icon(Icons.delete, color: Colors.white),
                   ),
+                  // Dipanggil SEBELUM kartu hilang: tampilkan dialog konfirmasi.
+                  // Mengembalikan true (jadi dihapus) atau false (kartu kembali ke tempatnya).
+                  // `?? false` menangani dialog yang ditutup tanpa memilih tombol.
                   confirmDismiss: (arah) async {
                     return await showDialog<bool>(
                           context: context,
@@ -302,6 +369,7 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
                         ) ??
                         false;
                   },
+                  // Dipanggil SETELAH pengguna memilih "Hapus" dan kartu hilang dari layar.
                   onDismissed: (arah) {
                     // Hapus di database DULU, baru muat ulang daftar.
                     // Urutan ini penting: bila daftar dimuat ulang sebelum
@@ -315,6 +383,7 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
                       SnackBar(content: Text('"${menu.nama}" dihapus')),
                     );
                   },
+                  // Kartu menu (isi yang terlihat di daftar).
                   child: Card(
                     margin: const EdgeInsets.only(bottom: 12),
                     elevation: 3,
@@ -323,6 +392,7 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
                     child: ListTile(
                       contentPadding:
                           const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      // Kiri: lingkaran id; berwarna abu-abu bila menu tidak tersedia.
                       leading: CircleAvatar(
                         backgroundColor: menu.tersedia
                             ? Colors.teal.shade50
@@ -343,6 +413,7 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
                           color: menu.tersedia ? null : Colors.grey,
                         ),
                       ),
+                      // Subjudul: kategori, stok (Tugas 5), label TIDAK TERSEDIA, lalu deskripsi.
                       subtitle: Text(
                         '${menu.kategori} • Stok ${menu.stok}'
                         '${menu.tersedia ? '' : ' • TIDAK TERSEDIA'}\n'
@@ -351,11 +422,14 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       isThreeLine: true,
+                      // Kanan: harga dalam format rupiah.
                       trailing: Text(
                         formatRupiah(menu.harga),
                         style: const TextStyle(
                             fontWeight: FontWeight.bold, color: Colors.teal),
                       ),
+                      // Ketuk kartu → buka FormMenu dalam mode EDIT dengan data menu ini,
+                      // lalu muat ulang daftar bila perubahan berhasil disimpan.
                       onTap: () async {
                         final berhasil = await Navigator.push<bool>(
                           context,
@@ -369,6 +443,7 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
                           );
                         }
                       },
+                      // Tekan lama → ubah status tersedia tanpa membuka formulir.
                       onLongPress: () => _balikKetersediaan(menu),
                     ),
                   ),
@@ -382,6 +457,8 @@ class _HalamanKatalogState extends State<HalamanKatalog> {
   }
 }
 
+// Tampilan saat data gagal dimuat: ikon awan, pesan error, dan tombol
+// "Coba Lagi" yang memanggil [onCobaLagi] (di halaman ini: muatUlang()).
 Widget _tampilanError(String pesan, VoidCallback onCobaLagi) {
   return Center(
     child: Padding(
@@ -410,7 +487,11 @@ Widget _tampilanError(String pesan, VoidCallback onCobaLagi) {
   );
 }
 
-// ---------------- FORMULIR TAMBAH / UBAH ----------------
+// =====================================================================
+// TAMPILAN: FORMULIR TAMBAH / UBAH MENU
+// =====================================================================
+// Pengganti FormTambahMenu dari Latihan 2. Satu formulir dipakai untuk dua
+// mode, ditentukan oleh parameter `menu`.
 class FormMenu extends StatefulWidget {
   const FormMenu({super.key, this.menu});
 
@@ -423,17 +504,23 @@ class FormMenu extends StatefulWidget {
 }
 
 class _FormMenuState extends State<FormMenu> {
+  // Kunci Form, dipakai untuk menjalankan semua validator sekaligus.
   final _formKey = GlobalKey<FormState>();
 
+  // Controller menyimpan teks setiap kolom. `late` karena isi awalnya
+  // baru ditentukan di initState() (kosong atau dari data lama).
   late final TextEditingController _nama;
   late final TextEditingController _harga;
   late final TextEditingController _stok;
   late final TextEditingController _deskripsi;
 
+  // Kategori terpilih dan status tersedia (sakelar).
   late String _kategori;
   late bool _tersedia;
+  // true selama data dikirim ke server: tombol Simpan dinonaktifkan.
   bool _sedangMenyimpan = false;
 
+  // true bila formulir dibuka untuk mengubah menu yang sudah ada.
   bool get _modeEdit => widget.menu != null;
 
   @override
@@ -441,6 +528,7 @@ class _FormMenuState extends State<FormMenu> {
     super.initState();
 
     // Isi awal: dari data yang ada (mode edit) atau kosong (mode tambah).
+    // null pada mode tambah, berisi data pada mode edit.
     final menu = widget.menu;
     _nama = TextEditingController(text: menu?.nama ?? '');
     _harga = TextEditingController(text: menu == null ? '' : '${menu.harga}');
@@ -450,6 +538,7 @@ class _FormMenuState extends State<FormMenu> {
     _tersedia = menu?.tersedia ?? true;
   }
 
+  // Membuang semua controller saat halaman ditutup agar tidak bocor memori.
   @override
   void dispose() {
     _nama.dispose();
@@ -467,12 +556,16 @@ class _FormMenuState extends State<FormMenu> {
     return [_kategori, ...bawaan];
   }
 
+  // Dipanggil saat tombol Simpan ditekan.
+  // Urutan: validasi → tandai sedang menyimpan → UPDATE/INSERT → tutup halaman.
   Future<void> _simpan() async {
+    // Ada isian tidak valid → berhenti, tidak ada permintaan ke server.
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _sedangMenyimpan = true);
 
     try {
+      // Mode edit → UPDATE baris lama (berdasarkan id); mode tambah → INSERT baris baru.
       if (_modeEdit) {
         await ubahMenu(
           id: widget.menu!.id,
@@ -494,7 +587,9 @@ class _FormMenuState extends State<FormMenu> {
       }
 
       if (!mounted) return;
+      // Kirim true ke halaman daftar: tanda data berhasil disimpan.
       Navigator.pop(context, true);
+    // Server menolak permintaan, mis. policy RLS atau grant belum ada.
     } on PostgrestException catch (e) {
       if (!mounted) return;
       setState(() => _sedangMenyimpan = false);
@@ -514,16 +609,19 @@ class _FormMenuState extends State<FormMenu> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        // Judul mengikuti mode formulir.
         title: Text(_modeEdit ? 'Ubah Menu' : 'Tambah Menu'),
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
       ),
+      // Form mengelompokkan semua kolom agar bisa divalidasi bersama.
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             TextFormField(
+              // ---------- Kolom nama (wajib, minimal 3 karakter) ----------
               controller: _nama,
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(
@@ -542,11 +640,15 @@ class _FormMenuState extends State<FormMenu> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
+              // ---------- Pilihan kategori ----------
+              // Pada Flutter sebelum 3.33, `initialValue:` ditulis `value:`.
               initialValue: _kategori,
               decoration: const InputDecoration(
                 labelText: 'Kategori',
                 border: OutlineInputBorder(),
               ),
+              // Pilihan dibangun dari _pilihanKategori agar kategori lama dari
+              // database selalu ada di daftar (dropdown tidak error).
               items: _pilihanKategori
                   .map((k) => DropdownMenuItem(value: k, child: Text(k)))
                   .toList(),
@@ -556,6 +658,8 @@ class _FormMenuState extends State<FormMenu> {
               },
             ),
             const SizedBox(height: 16),
+            // ---------- Harga dan Stok berdampingan ----------
+            // Expanded flex 3 : 2 → kolom harga lebih lebar daripada kolom stok.
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -584,6 +688,7 @@ class _FormMenuState extends State<FormMenu> {
                 Expanded(
                   flex: 2,
                   child: TextFormField(
+                    // Tugas 5: kolom stok — harus angka dan tidak boleh negatif.
                     controller: _stok,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
@@ -602,6 +707,8 @@ class _FormMenuState extends State<FormMenu> {
             ),
             const SizedBox(height: 16),
             TextFormField(
+              // ---------- Kolom deskripsi ----------
+              // maxLength: 100 membatasi panjang teks dan menampilkan penghitung karakter.
               controller: _deskripsi,
               maxLines: 3,
               maxLength: 100,
@@ -610,6 +717,8 @@ class _FormMenuState extends State<FormMenu> {
                 border: OutlineInputBorder(),
               ),
             ),
+            // ---------- Sakelar Tersedia ----------
+            // Menu yang dimatikan akan tampil redup dengan label TIDAK TERSEDIA.
             SwitchListTile(
               value: _tersedia,
               onChanged: (nilai) => setState(() => _tersedia = nilai),
@@ -619,6 +728,8 @@ class _FormMenuState extends State<FormMenu> {
               contentPadding: EdgeInsets.zero,
             ),
             const SizedBox(height: 16),
+            // ---------- Tombol Simpan ----------
+            // onPressed: null membuat tombol nonaktif selama menyimpan.
             FilledButton.icon(
               onPressed: _sedangMenyimpan ? null : _simpan,
               icon: _sedangMenyimpan
